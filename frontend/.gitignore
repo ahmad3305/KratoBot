@@ -1,0 +1,31 @@
+# dependencies
+/node_modules
+/.next
+out/
+
+# local env files
+.env.local
+.env.example
+
+# logs
+/logs
+*.log
+
+test.js
+# yarn
+yarn-error.log
+
+# OS
+.DS_Store
+
+# Vercel
+.vercel
+
+# railway
+.railway
+
+# Production builds
+/out
+
+# Coverage
+coveraget

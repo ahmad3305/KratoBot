@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Rubik:wght@600;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  font-family: 'Inter', system-ui, sans-serif;
+  @apply bg-neu-bg text-neu-text;
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-neu-bg min-h-screen;
+}
+
+.font-display {
+  font-family: 'Rubik', 'Inter', system-ui, sans-serif !important;
+}
+
+.shadow-neu {
+  box-shadow: 8px 8px 16px #babec5, -8px -8px 16px #fff !important;
+}
+.shadow-neuInset {
+  box-shadow: inset 8px 8px 16px #babec5, inset -8px -8px 16px #fff !important;
+}
+
+.rounded-neu {
+  border-radius: 2rem !important;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  @apply focus:outline-none transition duration-200;
+}
+
+::selection {
+  background: #E5F0FF;
+  color: #408CF1;
+}
+
+img[draggable="false"] {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* Utility classes for status pills/badges */
+.status-pill {
+  @apply px-3 py-1 rounded-full font-semibold text-xs uppercase;
+}
+.status-processing {
+  @apply bg-yellow-100 text-yellow-800;
+}
+.status-ready {
+  @apply bg-green-100 text-green-700;
+}
+.status-failed {
+  @apply bg-red-100 text-red-700;
+}
+
+/* REMOVE any of these lines if present: */
+/* .bg-neu-surface { @apply bg-neu-surface; } */
+/* .bg-neu-bg { @apply bg-neu-bg; } */
+/* etc. Don't create .class { @apply .class } */

@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+keybert
+transformers
+sentence-transformers
+google-generativeai
+pydantic
