@@ -101,28 +101,17 @@ async function buildRawSite(domain: string, isBrand: boolean): Promise<{ text: s
 import fs from "fs";
 import path from "path";
 
-async function prepareSite(site: { domain: string; isBrand: boolean; text: string }): Promise<ProcessedSite> {
+async function prepareSite(site: {
+  domain: string;
+  isBrand: boolean;
+  text: string;
+}): Promise<ProcessedSite> {
+  
+  const wordCount = site.text.trim().split(/\s+/).length;
 
-  // DEBUG: save cleaned scraper output
-  try {
-    const debugDir = path.join(process.cwd(), "debug_scrapes");
-
-    if (!fs.existsSync(debugDir)) {
-      fs.mkdirSync(debugDir, { recursive: true });
-    }
-
-    const filename = `${site.domain.replace(/[^\w]/g, "_")}.txt`;
-
-    fs.writeFileSync(
-      path.join(debugDir, filename),
-      site.text,
-      "utf-8"
-    );
-
-    console.log(`Saved cleaned text for ${site.domain}`);
-  } catch (err) {
-    console.error("Failed to save debug scrape:", err);
-  }
+  console.log(
+    `Scraping done: ${site.domain} | words: ${wordCount}`
+  );
 
   const [keywordsRes, sentimentRes] = await Promise.allSettled([
     extractKeywords(site.text),
