@@ -18,17 +18,17 @@ export default function LandingPage() {
           KratoBot
         </h1>
         <p className="text-lg text-gray-600 max-w-xl text-center">
-          The modern way to visualize, benchmark, and strategize your brand & competitors—powered by advanced AI analytics.
+          The AI powered Digital Marketing Strategy bot for your brand.
         </p>
       </div>
 
       {/* Neumorphic hero CTA */}
       <div className="bg-neu-surface shadow-neu rounded-neu p-8 sm:p-12 flex flex-col items-center">
         <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">
-          Unlock next-level brand authority intelligence
+          Unlock next-level Digital Marketing Intelligence
         </h2>
         <p className="text-gray-500 mb-8 text-center">
-          Signup for a free account and start analyzing your brand, competitors, and market positioning with real-time, beautiful visual reports.
+          Signup for a free account and start analyzing your brand, competitors, and market positioning with real-time, detailed visual reports.
         </p>
         <div className="flex gap-4">
           <Link
