@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Use your real frontend URL instead of * for production and with credentials
-const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:3001";
+const ALLOWED_ORIGIN = process.env.FRONTEND_ORIGIN || "https://krato-bot.vercel.app";
 
 // Use this as a wrapper for all handler responses
 export function withCors(handler: (req: NextRequest) => Promise<NextResponse> | NextResponse) {
