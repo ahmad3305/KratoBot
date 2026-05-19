@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import cors from "../../../utils/cors";
+import cors, { withCors } from "../../../utils/cors";
 import { verifyJWT } from "../../../middleware/auth";
 import { pool } from "../../../config/database";
 
-export async function OPTIONS(req: NextRequest) {
-  return cors(req);
-}
+export const OPTIONS = cors;
 
-export async function GET(req: NextRequest) {
+export const GET = withCors(async function (req: NextRequest) {
   try {
     const user = verifyJWT(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,7 +16,6 @@ export async function GET(req: NextRequest) {
     let rows: any[] = [];
 
     if (project_id) {
-      // All reports for this project
       const [resp] = await pool.query(
         `SELECT 
            r.report_id, r.project_id, r.report_title, r.status, r.generated_at,
@@ -32,7 +29,6 @@ export async function GET(req: NextRequest) {
       );
       rows = resp as any[];
     } else {
-      // All reports for all user projects
       const [resp] = await pool.query(
         `SELECT 
            r.report_id, r.project_id, r.report_title, r.status, r.generated_at,
@@ -49,6 +45,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ reports: rows }, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: e.message || "Server error" },
+      { status: 500 }
+    );
   }
-}
+});

@@ -89,25 +89,59 @@ async function fetchMetrics(domain: string): Promise<{
 
 // Scrape, clean, ML extract for a domain
 async function buildRawSite(domain: string, isBrand: boolean): Promise<{ text: string; domain: string; isBrand: boolean }> {
-  const pages = await scrapeWebsite(`https://${domain}`, 15);
+  const pages = await scrapeWebsite(`https://${domain}`, 10);
   const fullText = pages.map(p => p.text).join(" ").replace(/\s+/g, " ").trim();
   return {
     domain,
     isBrand,
-    text: fullText.slice(0, 32000),
+    text: fullText.slice(0, 100000),
   };
 }
 
+import fs from "fs";
+import path from "path";
+
 async function prepareSite(site: { domain: string; isBrand: boolean; text: string }): Promise<ProcessedSite> {
-  const cleaned = cleanText(site.text);
-  const [keywords, sentimentScore] = await Promise.all([
-    extractKeywords(cleaned),
-    analyzeSentiment(cleaned),
+
+  // DEBUG: save cleaned scraper output
+  try {
+    const debugDir = path.join(process.cwd(), "debug_scrapes");
+
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    const filename = `${site.domain.replace(/[^\w]/g, "_")}.txt`;
+
+    fs.writeFileSync(
+      path.join(debugDir, filename),
+      site.text,
+      "utf-8"
+    );
+
+    console.log(`Saved cleaned text for ${site.domain}`);
+  } catch (err) {
+    console.error("Failed to save debug scrape:", err);
+  }
+
+  const [keywordsRes, sentimentRes] = await Promise.allSettled([
+    extractKeywords(site.text),
+    analyzeSentiment(site.text),
   ]);
+
   return {
     domain: site.domain,
-    keywords,
-    sentimentScore,
+
+    keywords:
+      keywordsRes.status === "fulfilled"
+        ? keywordsRes.value
+        : ["empty_api_fail"],
+
+    sentimentScore:
+      sentimentRes.status === "fulfilled"
+        ? sentimentRes.value
+        : 0.0,
+
     isBrand: site.isBrand,
   };
 }
@@ -198,14 +232,18 @@ export async function runOrchestrator({
 
     // 5. Build LLM input (structure both brand & competitors as you designed in structuredData)
     const structuredData = {
-      [brandDomain]: {
-        ...brandResult,
-        competitors: {} as Record<string, AuthorityResult>
-      }
-    };
-    for (const compRes of competitorResults) {
-      structuredData[brandDomain].competitors[compRes.domain] = compRes;
-    }
+    brand: {
+      brand_domain: brandDomain,
+      ...brandResult,
+    },
+    competitors: competitorResults.map((comp) => ({
+      domain: comp.domain,
+      keywords: comp.keywords,
+      sentiment: comp.sentiment,
+      backlinks: comp.backlinks,
+      authority_score: comp.authority_score,
+    })),
+  };
 
     // 6. Call LLM to generate report content/strategy
     const { data: llmResp } = await axios.post(LLM_API_URL, { data: structuredData });
@@ -224,7 +262,7 @@ export async function runOrchestrator({
         generated_at = NOW()
       WHERE report_id = ?`,
       [
-        report_title || `Brand Analysis for ${brandDomain}`,
+        report_title || `Marketing Strategy for ${brandDomain}`,
         report_content,
         brandResult.authority_score,
         brandResult.backlinks,

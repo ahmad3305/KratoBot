@@ -10,8 +10,18 @@ from transformers import pipeline
 
 # --- LLM (Gemini) ---
 import google.generativeai as genai
+from fastapi.middleware.cors import CORSMiddleware
+
+
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # or "*"
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Keyword extraction models
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -23,10 +33,16 @@ sentiment_model = pipeline(
     model="distilbert-base-uncased-finetuned-sst-2-english"
 )
 
-# LLM (Gemini)
-GEMINI_API_KEY = "your-key-here"  # Use env variable in prod!
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API")
+
 genai.configure(api_key=GEMINI_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+gemini_model = genai.GenerativeModel("gemini-3.1-flash-lite")
 
 # ------------------------------
 # ----- SCHEMA CLASSES ---------
@@ -34,7 +50,7 @@ gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 
 class KeywordRequest(BaseModel):
     text: str
-    num_keywords: int = 500
+    num_keywords: int = 1000
 
 class SentimentRequest(BaseModel):
     text: str
@@ -46,16 +62,77 @@ class ReportRequest(BaseModel):
 # ---- ENDPOINTS ---------------
 # ------------------------------
 
+
 @app.post("/extract_keywords")
 def extract_keywords(req: KeywordRequest):
-    keywords = keyword_model.extract_keywords(req.text, top_n=req.num_keywords)
-    return {"keywords": [kw for kw, _ in keywords]}
+    text = req.text
+    
+
+    max_chars = 2000
+    chunks = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+
+    all_keywords = []
+
+    for chunk in chunks:
+        if len(chunk.strip()) < 60:
+            continue
+
+        try:
+            keywords = keyword_model.extract_keywords(
+                chunk,
+                keyphrase_ngram_range=(1, 2),
+                stop_words="english",
+                top_n=10
+            )
+
+            all_keywords.extend([kw for kw, _ in keywords])
+
+        except Exception:
+            continue
+
+    # nothing extracted at all
+    if len(all_keywords) == 0:
+        return {
+            "keywords": ["shit_no_keywords"]
+        }
+
+
+    return {
+        "keywords": all_keywords
+    }
 
 @app.post("/analyze_sentiment")
 def analyze_sentiment(req: SentimentRequest):
-    result = sentiment_model(req.text)
-    return {"result": result}
+    text = req.text
 
+    # split into safe chunks (model limit safe zone)
+    max_chars = 2000
+    chunks = [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+    scores = []
+
+    for chunk in chunks:
+        result = sentiment_model(chunk[:512])[0]  # extra safety
+        score = result["score"]
+
+        # convert to positive scale [0,1]
+        if result["label"] == "NEGATIVE":
+            score = 1 - score
+
+        scores.append(score)
+
+    # aggregate global sentiment
+    window = scores[-10:]
+    if len(window) == 0:
+        final_score = 0.0
+    else:
+        final_score = sum(window) / len(window)
+
+    return {
+        "score": final_score,
+        "label": "AGGREGATED"
+    }
+    
 @app.post("/generate_strategy_report")
 def generate_strategy_report(req: ReportRequest):
     prompt = f"""

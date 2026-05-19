@@ -115,7 +115,7 @@ export default function NewProjectOnboarding() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-neu-bg px-4 py-10">
-      <div className="max-w-lg w-full bg-white shadow-neu rounded-neu px-8 py-10 animate-in fade-in duration-500">
+      <div className="max-w-xl w-full bg-white shadow-neu rounded-neu px-12 py-12 animate-in fade-in duration-500">
         {!done ? (
           <form onSubmit={handleSubmit}>
             {/* Step Indicator */}
