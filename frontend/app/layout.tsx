@@ -20,7 +20,7 @@ export default function RootLayout({
         <link rel="icon" href="/images/logo.svg" type="image/svg+xml" />
       </head>
       <body className="min-h-screen bg-neu-bg antialiased selection:bg-krato-light selection:text-krato">
-        <main className="pt-20 pb-8 px-4 sm:px-0">
+        <main className="pb-8 px-4 sm:px-0"> {/* Removed pt-20 */}
           {children}
         </main>
       </body>

@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # or "*"
+    allow_origins=["http://localhost:3000","https://kratobot-production.up.railway.app"], # or "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,6 +62,10 @@ class ReportRequest(BaseModel):
 # ---- ENDPOINTS ---------------
 # ------------------------------
 
+
+@app.get("/")
+def root():
+    return {"status": "KratoBot ML service running"}
 
 @app.post("/extract_keywords")
 def extract_keywords(req: KeywordRequest):

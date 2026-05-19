@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import MarkdownRenderer from "../../../../../styles/MarkdownRenderer";
 import {
   ResponsiveContainer,
   BarChart,
@@ -392,7 +393,7 @@ export default function ReportDetailPage({
           prose-strong:text-white prose-strong:font-semibold
           prose-ul:my-4 prose-ol:my-4
           prose-code:text-cyan-400 prose-code:bg-zinc-900 prose-code:px-1 prose-code:rounded">
-          <ReactMarkdown>{report.report_content}</ReactMarkdown>
+          <MarkdownRenderer content={report.report_content} />
         </div>
       </motion.div>
     </div>

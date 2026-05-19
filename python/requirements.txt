@@ -1,8 +1,9 @@
 fastapi
 uvicorn
+sentence-transformers
 keybert
 transformers
-sentence-transformers
+torch
 google-generativeai
-pydantic
 python-dotenv
+python-multipart

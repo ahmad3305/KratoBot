@@ -25,7 +25,7 @@
         "app/*"
       ]
     },
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
     "jsx": "preserve",
     "allowJs": true,
     "incremental": true,
