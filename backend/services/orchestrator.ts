@@ -89,7 +89,7 @@ async function fetchMetrics(domain: string): Promise<{
 
 // Scrape, clean, ML extract for a domain
 async function buildRawSite(domain: string, isBrand: boolean): Promise<{ text: string; domain: string; isBrand: boolean }> {
-  const pages = await scrapeWebsite(`https://${domain}`, 5);
+  const pages = await scrapeWebsite(`https://${domain}`, 10);
   const fullText = pages.map(p => p.text).join(" ").replace(/\s+/g, " ").trim();
   return {
     domain,
