@@ -1,18 +1,19 @@
+import fs from "fs";
+import path from "path";
+import axios from "axios";
+import { pool } from "../config/database";
 import { scrapeWebsite } from "./scraping/webScraper";
 import { extractKeywords } from "./ml/keyword_extractor";
 import { analyzeSentiment } from "./ml/sentiment_analyzer";
-import { cleanText } from "../utils/textCleaner";
 import { ApifyClient } from "apify-client";
-import { pool } from "../config/database";
-import axios from "axios";
 
-// Types
 export type ProcessedSite = {
   domain: string;
   keywords: string[];
   sentimentScore: number;
   isBrand: boolean;
-  competitor_id?: number; // for DB storage
+  competitor_id?: number;
+  wordCount?: number;
 };
 
 export type AuthorityResult = {
@@ -25,15 +26,17 @@ export type AuthorityResult = {
   competitor_id?: number;
 };
 
-const APIFY_TOKEN =process.env.APIFY_API;
-const MAX_DOMAIN_SCORE = 100;
-const MAX_REF_DOMAINS = 100000;
-const MAX_LINKS = 1000000;
-const MAX_KEYWORDS = 50;
+const APIFY_TOKEN = process.env.APIFY_API;
+const LLM_API_URL =
+  process.env.LLM_API_URL || "http://localhost:8001/generate_strategy_report";
 
-const LLM_API_URL = process.env.LLM_API_URL || "http://localhost:8001/generate_strategy_report";
 const client = new ApifyClient({ token: APIFY_TOKEN });
 
+
+const MAX_DOMAIN_SCORE = 100; 
+const MAX_REF_DOMAINS = 100000; 
+const MAX_LINKS = 1000000; 
+const MAX_KEYWORDS = 500;
 // Utility functions
 function normalize(val: number, max: number) {
   return Math.max(0, Math.min(val / (max || 1), 1));
@@ -57,6 +60,7 @@ function computeAuthority({
   const normDomainScore = normalize(domain_score, MAX_DOMAIN_SCORE);
   const normKeywords = normalize(keyword_count, MAX_KEYWORDS);
   const normSentiment = Math.max(0, Math.min(sentiment, 1));
+
   return (
     normRefDomains * 30 +
     normLinks * 20 +
@@ -77,9 +81,12 @@ async function fetchMetrics(domain: string): Promise<{
     include_backlinks: false,
     timeout: 60,
   };
+
   const run = await client.actor("y7fDLFautapqoAg0v").call(input);
   const { items } = await client.dataset(run.defaultDatasetId).listItems();
+
   const v = items[0] || {};
+
   return {
     domain_score: Number(v.domain_score) || 0,
     referring_domains_count: Number(v.referring_domains_count) || 0,
@@ -87,103 +94,94 @@ async function fetchMetrics(domain: string): Promise<{
   };
 }
 
-// Scrape, clean, ML extract for a domain
-async function buildRawSite(domain: string, isBrand: boolean): Promise<{ text: string; domain: string; isBrand: boolean }> {
-  const pages = await scrapeWebsite(`https://${domain}`, 10);
-  const fullText = pages.map(p => p.text).join(" ").replace(/\s+/g, " ").trim();
-  return {
-    domain,
-    isBrand,
-    text: fullText.slice(0, 100000),
-  };
+
+/* ---------------- SAFE SCRAPE ---------------- */
+
+async function buildRawSite(domain: string, isBrand: boolean) {
+  try {
+    const pages = await scrapeWebsite(`https://${domain}`, 10);
+
+    const fullText = pages
+      .map((p) => p.text || "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+    console.log(
+      `[SCRAPED] ${domain} | pages=${pages.length} | words=${wordCount}`
+    );
+
+    return {
+      domain,
+      isBrand,
+      text: fullText,
+      wordCount,
+    };
+  } catch (err) {
+    console.error(`[SCRAPE FAILED] ${domain}`, err);
+
+    return {
+      domain,
+      isBrand,
+      text: "",
+      wordCount: 0,
+    };
+  }
 }
 
-import fs from "fs";
-import path from "path";
+/* ---------------- ML PIPELINE ---------------- */
 
 async function prepareSite(site: {
   domain: string;
   isBrand: boolean;
   text: string;
+  wordCount?: number;
 }): Promise<ProcessedSite> {
-  
-  const wordCount = site.text.trim().split(/\s+/).length;
+  const wordCount = site.wordCount || site.text.split(/\s+/).length;
 
-  console.log(
-    `Scraping done: ${site.domain} | words: ${wordCount}`
-  );
+  console.log(`[ML INPUT] ${site.domain} | words=${wordCount}`);
 
-  const [keywordsRes, sentimentRes] = await Promise.allSettled([
-    extractKeywords(site.text),
-    analyzeSentiment(site.text),
-  ]);
-
-  return {
-    domain: site.domain,
-
-    keywords:
-      keywordsRes.status === "fulfilled"
-        ? keywordsRes.value
-        : ["empty_api_fail"],
-
-    sentimentScore:
-      sentimentRes.status === "fulfilled"
-        ? sentimentRes.value
-        : 0.0,
-
-    isBrand: site.isBrand,
-  };
-}
-
-// Process and (for competitors) insert to analytics table
-async function processSite(
-  site: ProcessedSite,
-  competitor_id?: number // Must pass for competitors
-): Promise<AuthorityResult> {
-  const { domain_score, referring_domains_count, total_link_count } = await fetchMetrics(site.domain);
-  const authority_score = Number(
-    computeAuthority({
-      domain_score,
-      referring_domains_count,
-      total_link_count,
-      keyword_count: site.keywords.length,
-      sentiment: site.sentimentScore,
-    }).toFixed(2)
-  );
-
-  if (competitor_id) {
-    await pool.query(
-      `INSERT INTO Competitor_Analytics 
-        (competitor_id, backlink_count, authority_score, extracted_keywords, sentiment_score, analyzed_at)
-       VALUES (?, ?, ?, ?, ?, NOW())
-       ON DUPLICATE KEY UPDATE
-        backlink_count=VALUES(backlink_count),
-        authority_score=VALUES(authority_score),
-        extracted_keywords=VALUES(extracted_keywords),
-        sentiment_score=VALUES(sentiment_score),
-        analyzed_at=NOW()`,
-      [
-        competitor_id,
-        total_link_count,
-        authority_score,
-        JSON.stringify(site.keywords),
-        site.sentimentScore,
-      ]
-    );
+  if (!site.text || site.text.length < 100) {
+    console.warn(`[SKIP ML] ${site.domain} (insufficient text)`);
+    return {
+      domain: site.domain,
+      keywords: ["empty_text"],
+      sentimentScore: 0,
+      isBrand: site.isBrand,
+      wordCount,
+    };
   }
 
-  return {
-    domain: site.domain,
-    keywords: site.keywords,
-    sentiment: site.sentimentScore,
-    backlinks: total_link_count,
-    authority_score,
-    isBrand: site.isBrand,
-    competitor_id,
-  };
+  try {
+    const [keywords, sentiment] = await Promise.all([
+      extractKeywords(site.text),
+      analyzeSentiment(site.text),
+    ]);
+
+    return {
+      domain: site.domain,
+      keywords: Array.isArray(keywords) ? keywords : ["empty_api_fail"],
+      sentimentScore: typeof sentiment === "number" ? sentiment : 0,
+      isBrand: site.isBrand,
+      wordCount,
+    };
+  } catch (err) {
+    console.error(`[ML FAILED] ${site.domain}`, err);
+
+    return {
+      domain: site.domain,
+      keywords: ["ml_failed"],
+      sentimentScore: 0,
+      isBrand: site.isBrand,
+      wordCount,
+    };
+  }
 }
 
-// The main orchestrator function: USE THIS IN /api/analysis!
+/* ---------------- ORCHESTRATOR ---------------- */
+
 export async function runOrchestrator({
   project_id,
   report_id,
@@ -198,47 +196,114 @@ export async function runOrchestrator({
   report_title?: string;
 }) {
   try {
-    // 1. Scrape and ML enrich for brand
+    console.log(`[ORCH START] report=${report_id}`);
+
+    /* ---------------- BRAND ---------------- */
+
     const rawBrand = await buildRawSite(brandDomain, true);
     const brandProcessed = await prepareSite(rawBrand);
 
-    // 2. Scrape and ML enrich for each competitor (and map to competitor_id)
+    /* ---------------- COMPETITORS (PARALLEL SAFE) ---------------- */
+
     const rawComps = await Promise.all(
-      brandCompetitorArr.map(c => buildRawSite(c.domain, false))
-    );
-    const processedComps = await Promise.all(
-      rawComps.map((raw, i) => prepareSite(raw).then(site => ({ ...site, competitor_id: brandCompetitorArr[i].competitor_id })))
+      brandCompetitorArr.map((c) => buildRawSite(c.domain, false))
     );
 
-    // 3. Compute authority + store analytics rows for competitors
+    const processedComps = await Promise.all(
+      rawComps.map((raw, i) =>
+        prepareSite(raw).then((site) => ({
+          ...site,
+          competitor_id: brandCompetitorArr[i].competitor_id,
+        }))
+      )
+    );
+
+    /* ---------------- APIFY + AUTHORITY ---------------- */
+
+    const processSite = async (site: ProcessedSite) => {
+      const metrics = await fetchMetrics(site.domain);
+
+      const authority_score = computeAuthority({
+        domain_score: metrics.domain_score,
+        referring_domains_count: metrics.referring_domains_count,
+        total_link_count: metrics.total_link_count,
+        keyword_count: site.keywords.length,
+        sentiment: site.sentimentScore,
+      });
+
+      return {
+        domain: site.domain,
+        keywords: site.keywords,
+        sentiment: site.sentimentScore,
+        backlinks: metrics.total_link_count,
+        authority_score: Number(authority_score.toFixed(2)),
+        isBrand: site.isBrand,
+        competitor_id: site.competitor_id,
+      };
+    };
+
     const competitorResults: AuthorityResult[] = [];
-    for (const compSite of processedComps) {
-      competitorResults.push(await processSite(compSite, compSite.competitor_id));
+
+    for (const comp of processedComps) {
+      try {
+        const result = await processSite(comp);
+
+        competitorResults.push(result);
+
+        if (comp.competitor_id) {
+          await pool.query(
+            `INSERT INTO Competitor_Analytics 
+            (competitor_id, backlink_count, authority_score, extracted_keywords, sentiment_score, analyzed_at)
+            VALUES (?, ?, ?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+              backlink_count=VALUES(backlink_count),
+              authority_score=VALUES(authority_score),
+              extracted_keywords=VALUES(extracted_keywords),
+              sentiment_score=VALUES(sentiment_score),
+              analyzed_at=NOW()`,
+            [
+              comp.competitor_id,
+              result.backlinks,
+              result.authority_score,
+              JSON.stringify(result.keywords),
+              result.sentiment,
+            ]
+          );
+        }
+      } catch (err) {
+        console.error(`[COMPETITOR FAILED] ${comp.domain}`, err);
+      }
     }
 
-    // 4. Compute for brand (do not write to competitor_analytics, but return info)
     const brandResult = await processSite(brandProcessed);
 
-    // 5. Build LLM input (structure both brand & competitors as you designed in structuredData)
+    /* ---------------- LLM ---------------- */
+
     const structuredData = {
-    brand: {
-      brand_domain: brandDomain,
-      ...brandResult,
-    },
-    competitors: competitorResults.map((comp) => ({
-      domain: comp.domain,
-      keywords: comp.keywords,
-      sentiment: comp.sentiment,
-      backlinks: comp.backlinks,
-      authority_score: comp.authority_score,
-    })),
-  };
+      brand: {
+        brand_domain: brandDomain,
+        ...brandResult,
+      },
+      competitors: competitorResults.map((c) => ({
+        domain: c.domain,
+        keywords: c.keywords,
+        sentiment: c.sentiment,
+        backlinks: c.backlinks,
+        authority_score: c.authority_score,
+      })),
+    };
 
-    // 6. Call LLM to generate report content/strategy
-    const { data: llmResp } = await axios.post(LLM_API_URL, { data: structuredData });
-    const report_content: string = llmResp.strategy_report || llmResp.report || llmResp.text || "";
+    console.log("[LLM INPUT READY]");
 
-    // 7. Update Reports table
+    const { data: llmResp } = await axios.post(LLM_API_URL, {
+      data: structuredData,
+    });
+
+    const report_content =
+      llmResp.strategy_report || llmResp.report || llmResp.text || "";
+
+    /* ---------------- DB UPDATE ---------------- */
+
     await pool.query(
       `UPDATE Reports SET 
         report_title = ?, 
@@ -260,8 +325,14 @@ export async function runOrchestrator({
         report_id,
       ]
     );
+
+    console.log(`[ORCH DONE] report=${report_id}`);
   } catch (err: any) {
-    // Set report status to failed if anything goes wrong
-    await pool.query(`UPDATE Reports SET status = 'failed' WHERE report_id = ?`, [report_id]);
+    console.error("[ORCH FAILED]", err);
+
+    await pool.query(
+      `UPDATE Reports SET status = 'failed' WHERE report_id = ?`,
+      [report_id]
+    );
   }
 }
