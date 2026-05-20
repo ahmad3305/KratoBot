@@ -99,7 +99,7 @@ async function fetchMetrics(domain: string): Promise<{
 
 async function buildRawSite(domain: string, isBrand: boolean) {
   try {
-    const pages = await scrapeWebsite(`https://${domain}`, 10);
+    const pages = await scrapeWebsite(`https://${domain}`, 5);
 
     const fullText = pages
       .map((p) => p.text || "")
